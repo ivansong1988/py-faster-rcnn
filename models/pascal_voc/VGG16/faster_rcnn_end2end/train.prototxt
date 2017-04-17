@@ -11,6 +11,8 @@ layer {
     param_str: "'num_classes': 21"
   }
 }
+####
+####
 
 layer {
   name: "conv1_1"

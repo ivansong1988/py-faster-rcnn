@@ -28,13 +28,21 @@ class SolverWrapper(object):
         """Initialize the SolverWrapper."""
         self.output_dir = output_dir
 
+        '''
+        HAS_RPN: True
+        BBOX_REG: True
+        BBOX_NORMALIZE_TARGETS: True
+        '''
         if (cfg.TRAIN.HAS_RPN and cfg.TRAIN.BBOX_REG and
             cfg.TRAIN.BBOX_NORMALIZE_TARGETS):
             # RPN can only use precomputed normalization because there are no
             # fixed statistics to compute a priori
-            assert cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED
+            assert cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED #True, in faster_rcnn_end2end.yml
 
-        if cfg.TRAIN.BBOX_REG:
+        '''
+        这里是给fast-rcnn的ss proposal加速用的, faster-rcnn可以无视, "targets"项不会出现在ROIDataLayer的top中
+        '''
+        if cfg.TRAIN.BBOX_REG: 
             print 'Computing bounding-box regression targets...'
             self.bbox_means, self.bbox_stds = \
                     rdl_roidb.add_bbox_regression_targets(roidb)

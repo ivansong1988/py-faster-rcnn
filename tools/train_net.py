@@ -59,22 +59,35 @@ def parse_args():
 
 def combined_roidb(imdb_names):
     def get_roidb(imdb_name):
-        imdb = get_imdb(imdb_name)
+        imdb = get_imdb(imdb_name) # fast-rcnn, 若不修改则同时加载gt以及SS Proposals
         print 'Loaded dataset `{:s}` for training'.format(imdb.name)
-        imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
+        '''
+        #lib/data_set/imdb.py
+        class imdb;
+        def set_proposal_method(self, method):
+            method = eval('self.' + method + '_roidb')
+            self.roidb_handler = method
+        默认设置是selective_search_roidb(fast-rcnn), 但是要faster-rcnn实际调用的是
+        self.roidb_handler = gt_roidb
+        这里实际只加载GT数据(而默认的selective_search_roidb同时调用gt_roidb(), _load_selective_search_roidb()以及imdb.merge())
+        '''        
+        imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD) #faster-rcnn, 只加载gt
+
         print 'Set proposal method: {:s}'.format(cfg.TRAIN.PROPOSAL_METHOD)
-        roidb = get_training_roidb(imdb)
+        #/lib/roi_data_layer/roidb.py
+        # for each roidb record(i.e., one image)加入图像尺寸、max_overlap/max_classes等
+        roidb = get_training_roidb(imdb) #完成实际的数据加载(包括gtbox镜像翻转)
         return roidb
 
     roidbs = [get_roidb(s) for s in imdb_names.split('+')]
     roidb = roidbs[0]
-    if len(roidbs) > 1:
+    if len(roidbs) > 1: #确实==1
         for r in roidbs[1:]:
             roidb.extend(r)
         imdb = datasets.imdb.imdb(imdb_names)
     else:
         imdb = get_imdb(imdb_names)
-    return imdb, roidb
+    return imdb, roidb #imbd似乎记录的是用于加载SS Proposals的hander
 
 if __name__ == '__main__':
     args = parse_args()
@@ -106,7 +119,8 @@ if __name__ == '__main__':
 
     output_dir = get_output_dir(imdb)
     print 'Output will be saved to `{:s}`'.format(output_dir)
-
+    
+    #实际并不使用imdb数据
     train_net(args.solver, roidb, output_dir,
               pretrained_model=args.pretrained_model,
               max_iters=args.max_iters)

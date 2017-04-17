@@ -17,6 +17,23 @@ import numpy as np
 import yaml
 from multiprocessing import Process, Queue
 
+
+'''
+主要在lib/roi_data_layer/minbatch.py::get_minibatch
+name: "VGG_ILSVRC_16_layers"
+layer {
+  name: 'input-data'
+  type: 'Python'
+  top: 'data'  #图像数据
+  top: 'im_info' #图像info信息
+  top: 'gt_boxes' #gt的box经过缩放后的[xmin,ymin,xmax,ymax], 并没有任何其他额外信息
+  python_param {
+    module: 'roi_data_layer.layer'
+    layer: 'RoIDataLayer'
+    param_str: "'num_classes': 21"
+  }
+}
+'''
 class RoIDataLayer(caffe.Layer):
     """Fast R-CNN data layer used for training."""
 
