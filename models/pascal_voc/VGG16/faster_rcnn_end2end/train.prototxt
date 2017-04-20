@@ -448,7 +448,7 @@ layer {
 layer {
   name: "rpn_loss_cls"
   type: "SoftmaxWithLoss"
-  bottom: "rpn_cls_score_reshape"
+  bottom: "rpn_cls_score_reshape" ##batch * 2 * AH * W
   bottom: "rpn_labels"
   propagate_down: 1
   propagate_down: 0
@@ -475,27 +475,27 @@ layer {
 #========= RoI Proposal ============
 
 layer {
-  name: "rpn_cls_prob"
+  name: "rpn_cls_prob"  
   type: "Softmax"
-  bottom: "rpn_cls_score_reshape"
-  top: "rpn_cls_prob"
+  bottom: "rpn_cls_score_reshape" ##batch * 2 * AH * W
+  top: "rpn_cls_prob"             ##batch * 2 * AH * W
 }
 
 layer {
   name: 'rpn_cls_prob_reshape'
   type: 'Reshape'
-  bottom: 'rpn_cls_prob'
-  top: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_cls_prob'          ##batch * 2 * AH * W
+  top: 'rpn_cls_prob_reshape'     ##batch * 2A * H * W
   reshape_param { shape { dim: 0 dim: 18 dim: -1 dim: 0 } }
 }
 
 layer {
-  name: 'proposal'
+  name: 'proposal'                 ##python layer
   type: 'Python'
-  bottom: 'rpn_cls_prob_reshape'
-  bottom: 'rpn_bbox_pred'
-  bottom: 'im_info'
-  top: 'rpn_rois'
+  bottom: 'rpn_cls_prob_reshape'   ##batch * 2A * H * W
+  bottom: 'rpn_bbox_pred'          ##batch * 4A * H * W         
+  bottom: 'im_info'                ##1*3
+  top: 'rpn_rois'                  ##
 #  top: 'rpn_scores'
   python_param {
     module: 'rpn.proposal_layer'

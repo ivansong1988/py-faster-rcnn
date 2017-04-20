@@ -15,7 +15,7 @@ from fast_rcnn.nms_wrapper import nms
 
 DEBUG = False
 
-class ProposalLayer(caffe.Layer):
+class ProposalLayer(caffe.Layer):   ##proposal
     """
     Outputs object detection proposals by applying estimated bounding-box
     transformations to a set of regular boxes (called "anchors").
@@ -28,7 +28,7 @@ class ProposalLayer(caffe.Layer):
         self._feat_stride = layer_params['feat_stride']
         anchor_scales = layer_params.get('scales', (8, 16, 32))
         self._anchors = generate_anchors(scales=np.array(anchor_scales))
-        self._num_anchors = self._anchors.shape[0]
+        self._num_anchors = self._anchors.shape[0]   ##A
 
         if DEBUG:
             print 'feat_stride: {}'.format(self._feat_stride)
@@ -62,34 +62,36 @@ class ProposalLayer(caffe.Layer):
             'Only single item batches are supported'
 
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
-        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
-        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
-        nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
-        min_size      = cfg[cfg_key].RPN_MIN_SIZE
+        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N  ##12000
+        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N ##
+        nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH #0.7
+        min_size      = cfg[cfg_key].RPN_MIN_SIZE   #默认16, 现在8, 对应原图
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs, which we want
-        scores = bottom[0].data[:, self._num_anchors:, :, :]
-        bbox_deltas = bottom[1].data
-        im_info = bottom[2].data[0, :]
+        scores = bottom[0].data[:, self._num_anchors:, :, :] ###bottom[0]: rpn_cls_prob_reshape ##batch * 2A * H * W
+                                                             ### 0-bg, 1-fg, 所以第一个_num_anchors(A)对应bg anchor的概率, 获取属于fg的概率
+        bbox_deltas = bottom[1].data                         ### 偏移量batch * 4A * H * W 
+        im_info = bottom[2].data[0, :]                       ### 就一幅图
 
         if DEBUG:
             print 'im_size: ({}, {})'.format(im_info[0], im_info[1])
             print 'scale: {}'.format(im_info[2])
 
         # 1. Generate proposals from bbox deltas and shifted anchors
-        height, width = scores.shape[-2:]
+        height, width = scores.shape[-2:]  ## rpn输入层feature map尺寸
 
         if DEBUG:
             print 'score map size: {}'.format(scores.shape)
 
         # Enumerate all shifts
+        # 每个site对应原图的覆盖范围起点(对应以该site点为中心的anchor的tl/br点偏移量)
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
                             shift_x.ravel(), shift_y.ravel())).transpose()
-
+        
         # Enumerate all shifted anchors:
         #
         # add A anchors (1, A, 4) to
@@ -100,7 +102,7 @@ class ProposalLayer(caffe.Layer):
         K = shifts.shape[0]
         anchors = self._anchors.reshape((1, A, 4)) + \
                   shifts.reshape((1, K, 4)).transpose((1, 0, 2))
-        anchors = anchors.reshape((K * A, 4))
+        anchors = anchors.reshape((K * A, 4))  ##使得中心刚好对准feature map上的点
 
         # Transpose and reshape predicted bbox transformations to get them
         # into the same order as the anchors:
@@ -109,24 +111,24 @@ class ProposalLayer(caffe.Layer):
         # transpose to (1, H, W, 4 * A)
         # reshape to (1 * H * W * A, 4) where rows are ordered by (h, w, a)
         # in slowest to fastest order
-        bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1)).reshape((-1, 4))
+        bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1)).reshape((-1, 4))  ## K * 4 (K:总的anchor数)
 
         # Same story for the scores:
         #
         # scores are (1, A, H, W) format
         # transpose to (1, H, W, A)
         # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
-        scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
+        scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))    ## K * 1
 
         # Convert anchors into proposals via bbox transformations
-        proposals = bbox_transform_inv(anchors, bbox_deltas)
+        proposals = bbox_transform_inv(anchors, bbox_deltas)   ## 利用bbox回归获得回归后的bbox, gt与预测都是计算相对于anchor box的偏移
 
         # 2. clip predicted boxes to image
-        proposals = clip_boxes(proposals, im_info[:2])
+        proposals = clip_boxes(proposals, im_info[:2]) ##利用H/W截断anchor box以方便计算overlap
 
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
-        keep = _filter_boxes(proposals, min_size * im_info[2])
+        keep = _filter_boxes(proposals, min_size * im_info[2])   ##图像进行了缩放, 所以min_size真的是对应原图, 而不是600的那个图，这就不好控制了
         proposals = proposals[keep, :]
         scores = scores[keep]
 

@@ -110,17 +110,17 @@ class RoIDataLayer(caffe.Layer):
         # data blob: holds a batch of N images, each with 3 channels
         idx = 0
         top[idx].reshape(cfg.TRAIN.IMS_PER_BATCH, 3,
-            max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE)
+            max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE)  ## 1 * 3 * H_max * W_max, data
         self._name_to_top_map['data'] = idx
         idx += 1
 
         if cfg.TRAIN.HAS_RPN:
             top[idx].reshape(1, 3)
-            self._name_to_top_map['im_info'] = idx
+            self._name_to_top_map['im_info'] = idx   ## 1 * 3 * 1 * 1 (H, W, scale)
             idx += 1
 
-            top[idx].reshape(1, 4)
-            self._name_to_top_map['gt_boxes'] = idx
+            top[idx].reshape(1, 4) #这里无所谓的, 后面会重新reshape, 实际是5, 只要不是送入C++层的, blob的形状都可以随意一些
+            self._name_to_top_map['gt_boxes'] = idx  ## 
             idx += 1
         else: # not using RPN
             # rois blob: holds R regions of interest, each is a 5-tuple

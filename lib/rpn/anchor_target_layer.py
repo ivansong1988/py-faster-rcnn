@@ -23,7 +23,7 @@ class AnchorTargetLayer(caffe.Layer):
     labels and bounding-box regression targets.
     """
 
-    def setup(self, bottom, top):
+    def setup(self, bottom, top): #同时完成reshape操作
         layer_params = yaml.load(self.param_str_)
         anchor_scales = layer_params.get('scales', (8, 16, 32)) #16x at the feature map, so the sizes are (128, 256, 512)
         self._anchors = generate_anchors(scales=np.array(anchor_scales))
@@ -48,15 +48,16 @@ class AnchorTargetLayer(caffe.Layer):
         # allow boxes to sit over the edge by a small amount
         self._allowed_border = layer_params.get('allowed_border', 0)
 
-        height, width = bottom[0].data.shape[-2:]
+        height, width = bottom[0].data.shape[-2:] #rpn_cls_score, 
+        ###输出尺寸: batch * 18 * H * W, H/W: conv5_3 feature map size
         if DEBUG:
             print 'AnchorTargetLayer: height', height, 'width', width
 
         A = self._num_anchors
         # labels
-        top[0].reshape(1, 1, A * height, width)
+        top[0].reshape(1, 1, A * height, width)   #rpn_labels
         # bbox_targets
-        top[1].reshape(1, A * 4, height, width)
+        top[1].reshape(1, A * 4, height, width)   
         # bbox_inside_weights
         top[2].reshape(1, A * 4, height, width)
         # bbox_outside_weights
@@ -73,6 +74,8 @@ class AnchorTargetLayer(caffe.Layer):
 
         assert bottom[0].data.shape[0] == 1, \
             'Only single item batches are supported'
+        ''''''
+        
 
         # map of shape (..., H, W)
         height, width = bottom[0].data.shape[-2:]
@@ -80,7 +83,7 @@ class AnchorTargetLayer(caffe.Layer):
         gt_boxes = bottom[1].data
         # im_info
         im_info = bottom[2].data[0, :]
-
+ 
         if DEBUG:
             print ''
             print 'im_size: ({}, {})'.format(im_info[0], im_info[1])
@@ -90,16 +93,21 @@ class AnchorTargetLayer(caffe.Layer):
             print 'rpn: gt_boxes', gt_boxes
 
         # 1. Generate proposals from bbox deltas and shifted anchors
-        shift_x = np.arange(0, width) * self._feat_stride
+        # 这里是shift, 也就是每个feature map点对应到原图的那片区域的起始点
+        # 生成的原始anchor的中心是刚好位于一个x16区域的中心的
+        #   |----------------|   origin image region
+        #           |            feature map site
+        #   ||               ||  box
+        shift_x = np.arange(0, width) * self._feat_stride #project the site on feature map back into input image
         shift_y = np.arange(0, height) * self._feat_stride
-        shift_x, shift_y = np.meshgrid(shift_x, shift_y)
+        shift_x, shift_y = np.meshgrid(shift_x, shift_y) #获得在原图上的每个需要做bbox回归的点对应区域的起始坐标的
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
                             shift_x.ravel(), shift_y.ravel())).transpose()
         # add A anchors (1, A, 4) to
         # cell K shifts (K, 1, 4) to get
         # shift anchors (K, A, 4)
         # reshape to (K*A, 4) shifted anchors
-        A = self._num_anchors
+        A = self._num_anchors  
         K = shifts.shape[0]
         all_anchors = (self._anchors.reshape((1, A, 4)) +
                        shifts.reshape((1, K, 4)).transpose((1, 0, 2)))
@@ -132,12 +140,12 @@ class AnchorTargetLayer(caffe.Layer):
         overlaps = bbox_overlaps(
             np.ascontiguousarray(anchors, dtype=np.float),
             np.ascontiguousarray(gt_boxes, dtype=np.float))
-        argmax_overlaps = overlaps.argmax(axis=1)
-        max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
+        argmax_overlaps = overlaps.argmax(axis=1)                              #####每个anchor所对应的那个重叠率最大的gt box
+        max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]  #####每个anchor的最大重叠率
         gt_argmax_overlaps = overlaps.argmax(axis=0)
         gt_max_overlaps = overlaps[gt_argmax_overlaps,
                                    np.arange(overlaps.shape[1])]
-        gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
+        gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0] ####每个gt找到与之重叠率最高的那个anchor box
 
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
             # assign bg labels first so that positive labels can clobber them
@@ -178,7 +186,7 @@ class AnchorTargetLayer(caffe.Layer):
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
         bbox_outside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
-        if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
+        if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0: ##实际使用时RPN_POSITIVE_WEIGHT = -1
             # uniform weighting of examples (given non-uniform sampling)
             num_examples = np.sum(labels >= 0)
             positive_weights = np.ones((1, 4)) * 1.0 / num_examples
@@ -204,8 +212,9 @@ class AnchorTargetLayer(caffe.Layer):
             print 'stdevs:'
             print stds
 
-        # map up to original set of anchors
-        labels = _unmap(labels, total_anchors, inds_inside, fill=-1)
+        # map up to original set of anchors ####
+        ####rpn-data的输出数据, 尺寸数与总的anchor数据保持一致(方便直接索引)
+        labels = _unmap(labels, total_anchors, inds_inside, fill=-1)  ###显然超出边界的anchor应标记为无效(-1)
         bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, fill=0)
         bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, fill=0)
         bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, fill=0)
@@ -223,7 +232,7 @@ class AnchorTargetLayer(caffe.Layer):
         # labels
         labels = labels.reshape((1, height, width, A)).transpose(0, 3, 1, 2)
         labels = labels.reshape((1, 1, A * height, width))
-        top[0].reshape(*labels.shape)
+        top[0].reshape(*labels.shape) ##'*'意味着什么?再看
         top[0].data[...] = labels
 
         # bbox_targets
